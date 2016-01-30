@@ -1,0 +1,13 @@
+[package]
+name = "razdura"
+version = "0.1.0"
+authors = ["Elizabeth Decolvenaere <liz.decolvenaere@gmail.com>"]
+
+
+[dependencies]
+tcod = "0.8"
+rand = "0.3"
+
+[target.x86_64-unknown-linux-gnu.libz]
+rustc-link-search = ["/usr/local/lib"]
+root = "/usr/local/lib"
