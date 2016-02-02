@@ -8,7 +8,30 @@ use tcod::input::KeyCode::{Escape, Char};
 use rand::random;
 
 trait Drawable {
-    fn draw<T:Console>(&self, &mut T) -> ();
+    fn draw(&self, &mut Root);
+}
+
+trait Updates {
+    fn update(&mut self, Key, &mut Level, &Universe);
+}
+
+struct Universe {
+    c_level: usize,
+    exit: bool,
+    save: bool,
+    window_bounds: Bounds,
+    clock: i32,
+}
+
+impl Universe {
+    fn time(&mut self) {
+        self.clock += 1;
+    }
+}
+
+struct Level {
+    // num: i32,
+    monsters: Vec<Box<Monster>>,
 }
 
 struct Location {
@@ -39,61 +62,21 @@ impl Bounds {
     }
 }
 
-
-struct Creature {
+struct Player {
     loc: Location,
     sym: char,
 }
 
-impl Drawable for Creature {
-    fn draw<T: Console>(&self, con: &mut T) -> () {
-        con.put_char(self.loc.x, self.loc.y, self.sym, BackgroundFlag::Set);
+impl Drawable for Player {
+    fn draw(&self, con: &mut Root) {
+        con.put_char(self.loc.x as i32, self.loc.y as i32, self.sym, BackgroundFlag::Set);
     }
 }
 
-
-fn render<T: Console>(con: &mut T, player: &Creature, pets: &Vec<&mut Creature>, monsters: &Vec<&mut Creature>) {
-    con.clear();
-    player.draw(con);
-    for pet in pets {
-        pet.draw(con);
-    }
-    for monster in monsters{
-        monster.draw(con);
-    }
-}
-
-fn main() {
-    let window_bounds = Bounds { min : Location { x : 0, y: 0 }, max : Location { x : 79,  y : 49 } };
-    let mut root = Root::initializer()
-        .size(window_bounds.max.x+1, window_bounds.max.y+1)
-        .title("libtcot Rust tutorial")
-        .fullscreen(false)
-        .font("terminal.png", FontLayout::Tcod)
-        .font_type(FontType::Greyscale)
-        .init();
-    let mut exit = false;
-
-    let mut clock: i32 = 0;
-    let mut step: Location = Location { x : 0, y : 0 };
-
-    let mut player = Creature { loc : Location { x: 40, y: 25 }, sym: '@' };
-    let mut pet0 = Creature { loc : Location {x: 40, y: 25 }, sym: 'd' };
-
-    let mut pets: Vec<&mut Creature> = Vec::new();
-    let mut monsters: Vec<&mut Creature> = Vec::new();
-
-    pets.push(&mut pet0);
-
-    render(&mut root, &player, &pets, &monsters);
-
-    root.flush();
-
-    while !(root.window_closed() || exit) {
-        // Wait for and handle input
-        let keypress = root.wait_for_keypress(true);
+impl Updates for Player {
+    fn update(&mut self, keypress: Key, level: &mut Level, universe: &Universe) {
+        let mut step = Location{ x: 0, y: 0 };
         match keypress {
-            Key {code: Escape, ..} => exit = true,
             Key {code: Char, printable: 'j', ..} => {
                 step.x = 0;
                 step.y = 1;
@@ -112,38 +95,144 @@ fn main() {
             },
             _ => {}
         }
-        if window_bounds.chk_inside(player.loc.chg(&step)) {
-            player.loc = player.loc.chg(&step);
+        if universe.window_bounds.chk_inside(self.loc.chg(&step)) {
+            self.loc = self.loc.chg(&step);
         }
-        for pet in pets.iter_mut() {
-            match random::<u8>() % 4 {
-            0 => {
-                step.x = 0;
-                step.y = 1;
-            },
-            1 => {
-                step.x = 0;
-                step.y = -1;
-            },
-            2 => {
-                step.x = 1;
-                step.y = 0;
-            },
-            3 => {
-                step.x = -1;
-                step.y = 0;
-            },
-                _ => {}
+    }
+}
+
+struct Monster {
+    loc: Location,
+    sym: char,
+    is_tame: bool,
+    is_friendly: bool,
+}
+
+impl Drawable for Monster {
+    fn draw(&self, con: &mut Root) -> () {
+        con.put_char(self.loc.x as i32, self.loc.y as i32, self.sym, BackgroundFlag::Set);
+    }
+}
+
+impl Monster {
+    fn random_move(&mut self, level: &mut Level, universe: &Universe) {
+        let mut step = Location{ x: 0, y: 0};
+        match random::<i32>() % 4 {
+        0 => {
+            step.x = 0;
+            step.y = 1;
+        },
+        1 => {
+            step.x = 0;
+            step.y = -1;
+        },
+        2 => {
+            step.x = 1;
+            step.y = 0;
+        },
+        3 => {
+            step.x = -1;
+            step.y = 0;
+        },
+            _ => {}
+        }
+        if universe.window_bounds.chk_inside(self.loc.chg(&step)) {
+            self.loc = self.loc.chg(&step);
+        }
+    }
+}
+
+impl Updates for Monster {
+    fn update(&mut self, keypress: Key, level: &mut Level, universe: &Universe) {
+        if self.is_friendly {
+            if self.is_tame {
+                self.random_move(level, universe);
+            } else {
+                self.random_move(level, universe);
             }
-            if window_bounds.chk_inside(pet.loc.chg(&step)) && (pet.loc.chg(&step) != player.loc) {
-                pet.loc = pet.loc.chg(&step);
+        } else {
+            self.random_move(level, universe);
+        }
+    }
+}
+
+fn spawn_monster_rand(universe: &Universe, sym: char, is_tame: bool, is_friendly: bool) -> Box<Monster> {
+    let x = random::<i32>() % universe.window_bounds.max.x ;
+    let y = random::<i32>() % universe.window_bounds.max.y ;
+    Box::new(Monster { loc: Location { x : x, y : y }, sym : sym, is_tame : is_tame, is_friendly : is_friendly})
+}
+
+fn spawn_monster_here(universe: &Universe, sym: char, is_tame: bool, is_friendly: bool, x: i32, y: i32) -> Box<Monster> {
+    Box::new(Monster { loc: Location { x : x, y : y }, sym : sym, is_tame : is_tame, is_friendly : is_friendly})
+}
+
+
+fn render(player: &Player, level: &Level, universe: &Universe, con: &mut Root) {
+    con.clear();
+    player.draw(con);
+    for monster in level.monsters.iter() {
+        monster.draw(con);
+    }
+}
+
+fn main() {
+    // First, you must create the universe
+    let mut universe = Universe {
+        c_level: 1,
+        exit: false,
+        save: false,
+        window_bounds: Bounds { min : Location { x : 0, y: 0 }, max : Location { x : 79,  y : 49 } },
+        clock: 0,
+    };
+    // Then we can create the root window
+    let mut root = Root::initializer()
+        .size(universe.window_bounds.max.x+1 as i32, universe.window_bounds.max.y+1 as i32)
+        .title("libtcot Rust tutorial")
+        .fullscreen(false)
+        .font("terminal.png", FontLayout::Tcod)
+        .font_type(FontType::Greyscale)
+        .init();
+
+    // Now lets make a bin for levels, as well as the first level
+    let mut levels: Vec<Level> = Vec::new();
+    levels.push(Level{ monsters: Vec::new() });
+
+    // Lets initialize the player
+    let mut player = Player {
+        loc : Location { x : 40, y : 25 },
+        sym : '@',
+    };
+
+    // Lets add the player's pet
+    levels[universe.c_level].monsters.push(Box::new(Monster {
+        loc: Location { x: 40, y: 25 },
+        sym: 'd',
+        is_tame: true,
+        is_friendly: true,
+    }));
+    levels[universe.c_level].monsters[0].random_move(&mut levels[universe.c_level], &universe);
+
+    // Add a random monster
+    levels[universe.c_level].monsters.push(spawn_monster_rand(&universe, 'r', true, false));
+
+    render(&player, &levels[universe.c_level], &universe, &mut root);
+
+    root.flush();
+
+    while !(root.window_closed() || universe.exit) {
+        // Wait for and handle input
+        let keypress = root.wait_for_keypress(true);
+        match keypress {
+            Key {code: Escape, ..} => universe.exit = true,
+            _ => {
+                player.update(keypress, &mut levels[universe.c_level], &universe);
+                for monster in levels[universe.c_level].monsters.iter_mut() {
+                    monster.update(keypress, &mut levels[universe.c_level], &universe)
+                }
             }
         }
-        // render(&mut root, & live);
-        // render(&mut root, & [& player, &pet0]);
-        render(&mut root, &player, &pets, &monsters);
+        render(&player, &levels[universe.c_level], &universe, &mut root);
         root.flush();
-        clock += 1;
         // io::stdout().flush().unwrap();
     }
 
