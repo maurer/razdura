@@ -18,7 +18,7 @@ trait Drawable {
 }
 
 trait Updates {
-    fn update(&mut self, Key, &Level, &Universe) -> ConflictHandler;
+    fn update(&mut self, Key, &HashMap<Location, Rc<Drawable>>, &Universe) -> ConflictHandler;
 }
 
 enum ConflictType {
@@ -37,7 +37,7 @@ struct ConflictHandler<'a> {
     kind: ConflictType,
     loc: Location,
     instigator: &'a Drawable,
-    parties: Vec<Rc<RefCell<Drawable>>>,
+    parties: Vec<Rc<Drawable>>,
 }
 
 // impl Default for ConflictHandler {
@@ -66,14 +66,15 @@ impl Universe {
 
 struct Level {
     // num: i32,
-    // monsters: Vec<Box<Monster>>,
-    monsters: Vec<Rc<RefCell<Monster>>>,
-    map: HashMap<Location, Rc<RefCell<Drawable>>>,
+    // monsters: Vec<Rc<RefCell<Monster>>>,
+    monsters: Vec<Rc<Monster>>,
+    map: HashMap<Location, Rc<Drawable>>,
 }
 
 impl Level {
-    fn add_monster(&mut self, monster: Rc<RefCell<Monster>>) {
-        let loc = monster.borrow().loc;
+    // fn add_monster(&mut self, monster: Rc<RefCell<Monster>>) {
+    fn add_monster(&mut self, monster: Rc<Monster>) {
+        let loc = monster.loc;
         self.monsters.push(monster.clone());
         self.map.insert(loc, monster.clone());
     }
@@ -140,7 +141,7 @@ impl Drawable for Player {
 }
 
 impl Updates for Player {
-    fn update(&mut self, keypress: Key, level: &Level, universe: &Universe) -> ConflictHandler {
+    fn update(&mut self, keypress: Key, levelmap: &HashMap<Location, Rc<Drawable>>, universe: &Universe) -> ConflictHandler {
         let mut step = Location{ x: 0, y: 0 };
         match keypress {
             Key {code: Char, printable: 'j', ..} => {
@@ -182,24 +183,30 @@ impl Drawable for Monster {
 }
 
 impl Monster {
-    pub fn spawn_monster_rand(universe: &Universe, sym: char, is_tame: bool, is_friendly: bool) -> Rc<RefCell<Monster>> {
+    // pub fn spawn_monster_rand(universe: &Universe, sym: char, is_tame: bool, is_friendly: bool) -> Rc<RefCell<Monster>> {
+    pub fn spawn_monster_rand(universe: &Universe, sym: char, is_tame: bool, is_friendly: bool) -> Rc<Monster> {
         let x = random::<i32>() % universe.window_bounds.max.x ;
         let y = random::<i32>() % universe.window_bounds.max.y ;
-        Rc::new(RefCell::new(Monster { loc: Location { x : x, y : y }, sym : sym, is_tame : is_tame, is_friendly : is_friendly}))
+        // Rc::new(RefCell::new(Monster { loc: Location { x : x, y : y }, sym : sym, is_tame : is_tame, is_friendly : is_friendly}))
+        Rc::new(Monster { loc: Location { x : x, y : y }, sym : sym, is_tame : is_tame, is_friendly : is_friendly})
     }
 
-    pub fn spawn_monster_here(universe: &Universe, sym: char, is_tame: bool, is_friendly: bool, x: i32, y: i32) -> Rc<RefCell<Monster>> {
-        Rc::new(RefCell::new(Monster { loc: Location { x : x, y : y }, sym : sym, is_tame : is_tame, is_friendly : is_friendly}))
+    // pub fn spawn_monster_here(universe: &Universe, sym: char, is_tame: bool, is_friendly: bool, x: i32, y: i32) -> Rc<RefCell<Monster>> {
+    pub fn spawn_monster_here(universe: &Universe, sym: char, is_tame: bool, is_friendly: bool, x: i32, y: i32) -> Rc<Monster> {
+        // Rc::new(RefCell::new(Monster { loc: Location { x : x, y : y }, sym : sym, is_tame : is_tame, is_friendly : is_friendly}))
+        Rc::new(Monster { loc: Location { x : x, y : y }, sym : sym, is_tame : is_tame, is_friendly : is_friendly})
     }
-    pub fn spawn_monster_near(universe: &Universe, sym: char, is_tame: bool, is_friendly: bool, loc_0: &Location, range: i32) -> Rc<RefCell<Monster>> {
+    // pub fn spawn_monster_near(universe: &Universe, sym: char, is_tame: bool, is_friendly: bool, loc_0: &Location, range: i32) -> Rc<RefCell<Monster>> {
+    pub fn spawn_monster_near(universe: &Universe, sym: char, is_tame: bool, is_friendly: bool, loc_0: &Location, range: i32) -> Rc<Monster> {
         let mut loc = Location { x : 0, y : 0 };
         while loc.x == 0 && loc.y == 0 {
             loc.x = random::<i32>() % range;
             loc.y = random::<i32>() % range;
         }
-        Rc::new(RefCell::new(Monster { loc: loc.chg(loc_0), sym : sym, is_tame : is_tame, is_friendly : is_friendly}))
+        // Rc::new(RefCell::new(Monster { loc: loc.chg(loc_0), sym : sym, is_tame : is_tame, is_friendly : is_friendly}))
+        Rc::new(Monster { loc: loc.chg(loc_0), sym : sym, is_tame : is_tame, is_friendly : is_friendly})
     }
-    fn random_move(&mut self, level: &Level, universe: &Universe) -> ConflictHandler {
+    fn random_move(&mut self, levelmap: &HashMap<Location, Rc<Drawable>>, universe: &Universe) -> ConflictHandler {
         // let mut step = self.loc ;
             // Location{ x: 0, y: 0};
         loop {
@@ -224,7 +231,7 @@ impl Monster {
                 _ => {}
             }
             if universe.window_bounds.chk_inside(self.loc.chg(&step)) {
-                match level.map.get(&self.loc.chg(&step)) {
+                match levelmap.get(&self.loc.chg(&step)) {
                     Some(occ) => {
                         return ConflictHandler {kind: ConflictType::Occupied, loc: self.loc.chg(&step), instigator: self,  parties: vec![occ.clone()]}
                     },
@@ -239,15 +246,15 @@ impl Monster {
 }
 
 impl Updates for Monster {
-    fn update(&mut self, keypress: Key, level: &Level, universe: &Universe) -> ConflictHandler {
+    fn update(&mut self, keypress: Key, levelmap: &HashMap<Location, Rc<Drawable>>, universe: &Universe) -> ConflictHandler {
         if self.is_friendly {
             if self.is_tame {
-                return self.random_move(level, universe)
+                return self.random_move(levelmap, universe)
             } else {
-                return self.random_move(level, universe)
+                return self.random_move(levelmap, universe)
             }
         } else {
-            return self.random_move(level, universe)
+            return self.random_move(levelmap, universe)
         }
     }
 }
@@ -257,7 +264,7 @@ fn render(player: &Player, level: &Level, universe: &Universe, con: &mut Root) {
     con.clear();
     player.draw(con);
     for monster in level.monsters.iter() {
-        monster.borrow().draw(con);
+        monster.draw(con);
     }
 }
 
@@ -304,10 +311,11 @@ fn main() {
         match keypress {
             Key {code: Escape, ..} => universe.exit = true,
             _ => {
-                player.update(keypress, &levels[universe.c_level], &universe);
-                // for monster in levels[universe.c_level].monsters.iter() {
-                //     monster.borrow_mut().update(keypress, &levels[universe.c_level], &universe);
-                // }
+                let map = levels[universe.c_level].map.clone();
+                player.update(keypress, &map, &universe);
+                for monster in levels[universe.c_level].monsters.iter_mut() {
+                    monster.update(keypress, &map, &universe);
+                }
             }
         }
         render(&player, &levels[universe.c_level], &universe, &mut root);
