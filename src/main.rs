@@ -18,7 +18,7 @@ trait Drawable {
 }
 
 trait Updates {
-    fn update(&mut self, Key, &HashMap<Location, Rc<Drawable>>, &Universe) -> ConflictHandler;
+    fn update<'a>(&'a mut self, Key, &'a HashMap<Location, &'a Drawable>, &'a Universe) -> ConflictHandler;
 }
 
 enum ConflictType {
@@ -37,7 +37,7 @@ struct ConflictHandler<'a> {
     kind: ConflictType,
     loc: Location,
     instigator: &'a Drawable,
-    parties: Vec<Rc<Drawable>>,
+    parties: Vec<&'a Drawable>,
 }
 
 // impl Default for ConflictHandler {
@@ -64,19 +64,19 @@ impl Universe {
     }
 }
 
-struct Level {
+struct Level<'a> {
     // num: i32,
     // monsters: Vec<Rc<RefCell<Monster>>>,
-    monsters: Vec<Rc<Monster>>,
-    map: HashMap<Location, Rc<Drawable>>,
+    monsters: Vec<Monster>,
+    map: HashMap<Location, &'a Drawable>,
 }
 
-impl Level {
+impl <'a> Level<'a> {
     // fn add_monster(&mut self, monster: Rc<RefCell<Monster>>) {
-    fn add_monster(&mut self, monster: Rc<Monster>) {
+    fn add_monster(&'a mut self, monster: Monster) {
         let loc = monster.loc;
-        self.monsters.push(monster.clone());
-        self.map.insert(loc, monster.clone());
+        self.monsters.push(monster);
+        self.map.insert(loc, self.monsters.last().unwrap());
     }
     // fn update_monsters(&mut self, keypress: Key, player: &Player, universe: &Universe) -> ConflictHandler {
     //     for monster in self.monsters.iter_mut() {
@@ -141,7 +141,7 @@ impl Drawable for Player {
 }
 
 impl Updates for Player {
-    fn update(&mut self, keypress: Key, levelmap: &HashMap<Location, Rc<Drawable>>, universe: &Universe) -> ConflictHandler {
+    fn update(&mut self, keypress: Key, levelmap: &HashMap<Location, &Drawable>, universe: &Universe) -> ConflictHandler {
         let mut step = Location{ x: 0, y: 0 };
         match keypress {
             Key {code: Char, printable: 'j', ..} => {
@@ -203,10 +203,9 @@ impl Monster {
             loc.x = random::<i32>() % range;
             loc.y = random::<i32>() % range;
         }
-        // Rc::new(RefCell::new(Monster { loc: loc.chg(loc_0), sym : sym, is_tame : is_tame, is_friendly : is_friendly}))
         Rc::new(Monster { loc: loc.chg(loc_0), sym : sym, is_tame : is_tame, is_friendly : is_friendly})
     }
-    fn random_move(&mut self, levelmap: &HashMap<Location, Rc<Drawable>>, universe: &Universe) -> ConflictHandler {
+    fn random_move<'a>(&'a mut self, levelmap: &HashMap<Location, &'a Drawable>, universe: &Universe) -> ConflictHandler {
         // let mut step = self.loc ;
             // Location{ x: 0, y: 0};
         loop {
@@ -246,7 +245,7 @@ impl Monster {
 }
 
 impl Updates for Monster {
-    fn update(&mut self, keypress: Key, levelmap: &HashMap<Location, Rc<Drawable>>, universe: &Universe) -> ConflictHandler {
+    fn update<'a>(&'a mut self, keypress: Key, levelmap: &HashMap<Location, &'a Drawable>, universe: &Universe) -> ConflictHandler {
         if self.is_friendly {
             if self.is_tame {
                 return self.random_move(levelmap, universe)
@@ -311,10 +310,10 @@ fn main() {
         match keypress {
             Key {code: Escape, ..} => universe.exit = true,
             _ => {
-                let map = levels[universe.c_level].map.clone();
-                player.update(keypress, &map, &universe);
-                for monster in levels[universe.c_level].monsters.iter_mut() {
-                    monster.update(keypress, &map, &universe);
+                let level = &mut levels[universe.c_level];
+                player.update(keypress, &level.map, &universe);
+                for monster in level.monsters.iter_mut() {
+                    monster.update(keypress, &level.map, &universe);
                 }
             }
         }
